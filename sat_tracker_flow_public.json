@@ -1,0 +1,313 @@
+[
+    {
+        "id": "de266ffac18e9591",
+        "type": "inject",
+        "z": "cb1463db591ce3d6",
+        "name": "N2YO Every 60s",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "60",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "3",
+        "payload": "",
+        "payloadType": "date",
+        "x": 130,
+        "y": 80,
+        "wires": [
+            [
+                "e898b94ce53fe722"
+            ]
+        ]
+    },
+    {
+        "id": "e898b94ce53fe722",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "N2YO Build Requests",
+        "func": "// Replace with your N2YO API key from https://www.n2yo.com/api/\nconst API_KEY = 'YOUR_N2YO_API_KEY';\n\n// Observer location — replace with your coordinates and altitude in metres\nconst OBS_LAT = 0.0000;   // e.g. -35.2809\nconst OBS_LON = 0.0000;   // e.g. 149.1287\nconst OBS_ALT = 0;        // metres ASL, e.g. 600\n\n// Add your N2YO-tracked satellites here (must have NORAD IDs resolvable by N2YO)\n// Format: { name: 'DISPLAY_NAME', catnr: NORAD_ID }\nconst targets = [\n    // { name: 'ISS', catnr: 25544 },\n    // { name: 'EXAMPLE-SAT', catnr: 99999 }\n];\n\ntargets.forEach(t => {\n    node.send({\n        satName: t.name,\n        url: `https://api.n2yo.com/rest/v1/satellite/positions/${t.catnr}/${OBS_LAT}/${OBS_LON}/${OBS_ALT}/1/&apiKey=${API_KEY}`\n    });\n});\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "libs": [],
+        "x": 340,
+        "y": 80,
+        "wires": [
+            [
+                "6ad0e36abf36a3b6"
+            ]
+        ]
+    },
+    {
+        "id": "6ad0e36abf36a3b6",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "N2YO Fetch",
+        "func": "const url = msg.url;\nconst satName = msg.satName;\n\nreturn new Promise((resolve) => {\n    const req = https.get(url, {\n        headers: { 'User-Agent': 'NodeRED-SatTracker/1.0', 'Accept': 'application/json' },\n        timeout: 10000\n    }, (res) => {\n        let data = '';\n        res.on('data', chunk => data += chunk);\n        res.on('end', () => {\n            msg.statusCode = res.statusCode;\n            try { msg.payload = JSON.parse(data); delete msg.error; }\n            catch(e) { msg.error = { message: 'JSON parse failed' }; }\n            resolve(msg);\n        });\n    });\n    req.on('error', err => { msg.error = { message: err.message }; resolve(msg); });\n    req.on('timeout', () => { req.destroy(); msg.error = { message: 'timeout' }; resolve(msg); });\n}).then(m => m);",
+        "outputs": 1,
+        "noerr": 0,
+        "libs": [
+            {
+                "var": "https",
+                "module": "https"
+            }
+        ],
+        "x": 530,
+        "y": 80,
+        "wires": [
+            [
+                "79c24de8e4b55c6f"
+            ]
+        ]
+    },
+    {
+        "id": "79c24de8e4b55c6f",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "N2YO Parse",
+        "func": "if (msg.error) {\n    node.status({fill:'red', shape:'ring', text: msg.satName + ': ' + msg.error.message});\n    return null;\n}\nif (msg.statusCode !== 200) {\n    node.status({fill:'red', shape:'ring', text: msg.satName + ': HTTP ' + msg.statusCode});\n    return null;\n}\nconst body = msg.payload;\nif (!body || !body.positions || !body.positions[0]) {\n    node.status({fill:'yellow', shape:'ring', text: msg.satName + ': no pos'});\n    return null;\n}\nconst pos = body.positions[0];\nmsg.payload = {\n    name: msg.satName,\n    lat:  pos.satlatitude,\n    lon:  pos.satlongitude,\n    alt:  pos.sataltitude\n};\nnode.status({fill:'green', shape:'dot', text: msg.satName + ' ' + pos.satlatitude.toFixed(1) + ',' + pos.satlongitude.toFixed(1)});\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "libs": [],
+        "x": 720,
+        "y": 80,
+        "wires": [
+            [
+                "db35aaf61ede4794"
+            ]
+        ]
+    },
+    {
+        "id": "76ff1a5d5c597b74",
+        "type": "inject",
+        "z": "cb1463db591ce3d6",
+        "name": "Fetch TLE Hourly",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "3600",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "5",
+        "payload": "",
+        "payloadType": "date",
+        "x": 140,
+        "y": 200,
+        "wires": [
+            [
+                "81ea240c86799731"
+            ]
+        ]
+    },
+    {
+        "id": "81ea240c86799731",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "SatNOGS Build Requests",
+        "func": "// Add all satellites you want tracked via SatNOGS TLE (SGP4 propagation)\n// These can include satellites not available via N2YO\n// Format: { name: 'DISPLAY_NAME', catnr: NORAD_ID }\n// SatNOGS uses NORAD IDs; newly launched satellites may appear here before N2YO\nconst targets = [\n    // { name: 'ISS',       catnr: 25544 },\n    // { name: 'EXAMPLE-A', catnr: 98391 },\n    // { name: 'EXAMPLE-B', catnr: 98392 }\n];\n\ntargets.forEach(t => {\n    node.send({\n        satName: t.name,\n        url: `https://db.satnogs.org/api/tle/?norad_cat_id=${t.catnr}&format=json`\n    });\n});\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "libs": [],
+        "x": 360,
+        "y": 200,
+        "wires": [
+            [
+                "99a0bf4ab71baeef"
+            ]
+        ]
+    },
+    {
+        "id": "99a0bf4ab71baeef",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "SatNOGS Fetch",
+        "func": "const url = msg.url;\nconst satName = msg.satName;\n\nreturn new Promise((resolve) => {\n    const req = https.get(url, {\n        headers: { 'User-Agent': 'NodeRED-SatTracker/1.0', 'Accept': 'application/json' },\n        timeout: 10000\n    }, (res) => {\n        let data = '';\n        res.on('data', chunk => data += chunk);\n        res.on('end', () => {\n            msg.statusCode = res.statusCode;\n            try { msg.payload = JSON.parse(data); delete msg.error; }\n            catch(e) { msg.error = { message: 'JSON parse failed' }; }\n            resolve(msg);\n        });\n    });\n    req.on('error', err => { msg.error = { message: err.message }; resolve(msg); });\n    req.on('timeout', () => { req.destroy(); msg.error = { message: 'timeout' }; resolve(msg); });\n}).then(m => m);",
+        "outputs": 1,
+        "noerr": 0,
+        "libs": [
+            {
+                "var": "https",
+                "module": "https"
+            }
+        ],
+        "x": 560,
+        "y": 200,
+        "wires": [
+            [
+                "06f2d11811d29fdc"
+            ]
+        ]
+    },
+    {
+        "id": "06f2d11811d29fdc",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "Cache TLE",
+        "func": "if (msg.error) {\n    node.status({fill:'red', shape:'ring', text: msg.satName + ': ' + msg.error.message});\n    return null;\n}\nif (msg.statusCode !== 200) {\n    node.status({fill:'red', shape:'ring', text: msg.satName + ': HTTP ' + msg.statusCode});\n    return null;\n}\nconst results = msg.payload;\nif (!Array.isArray(results) || results.length === 0) {\n    node.status({fill:'yellow', shape:'ring', text: msg.satName + ': not in catalog'});\n    return null;\n}\nconst entry = results[0];\nconst tle1 = String(entry.tle1 || '').trim();\nconst tle2 = String(entry.tle2 || '').trim();\n\nif (tle1.length < 60 || tle2.length < 60) {\n    node.status({fill:'red', shape:'ring', text: msg.satName + ': bad TLE'});\n    return null;\n}\n\nconst cache = global.get('tleCache') || {};\ncache[msg.satName] = { tle1, tle2, updated: Date.now() };\nglobal.set('tleCache', cache);\n\nnode.status({fill:'green', shape:'dot', text: msg.satName + ' cached | keys: ' + Object.keys(cache).join(', ')});\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "libs": [],
+        "x": 750,
+        "y": 200,
+        "wires": [
+            []
+        ]
+    },
+    {
+        "id": "5a21d8ed0e15cb4e",
+        "type": "inject",
+        "z": "cb1463db591ce3d6",
+        "name": "Propagate Every 10s",
+        "props": [
+            {
+                "p": "payload"
+            }
+        ],
+        "repeat": "10",
+        "crontab": "",
+        "once": true,
+        "onceDelay": "30",
+        "payload": "",
+        "payloadType": "date",
+        "x": 150,
+        "y": 300,
+        "wires": [
+            [
+                "609f08103ce4f03c"
+            ]
+        ]
+    },
+    {
+        "id": "609f08103ce4f03c",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "Fan Out Cached Sats",
+        "func": "const cache = global.get('tleCache') || {};\nconst names = Object.keys(cache);\n\nif (names.length === 0) {\n    node.status({fill:'yellow', shape:'ring', text:'No TLEs cached yet'});\n    return null;\n}\n\nnames.forEach(name => {\n    const entry = cache[name];\n    node.send({\n        payload: { name, tle1: entry.tle1, tle2: entry.tle2 }\n    });\n});\n\nnode.status({fill:'green', shape:'dot', text: names.join(', ') + ' fanned out'});\nreturn null;",
+        "outputs": 1,
+        "noerr": 0,
+        "libs": [],
+        "x": 370,
+        "y": 300,
+        "wires": [
+            [
+                "86bf00357c676b39"
+            ]
+        ]
+    },
+    {
+        "id": "86bf00357c676b39",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "SGP4 Propagate",
+        "func": "const name = String(msg.payload.name).trim();\nconst tle1 = msg.payload.tle1;\nconst tle2 = msg.payload.tle2;\n\nlet satrec;\ntry { satrec = satellite.twoline2satrec(tle1, tle2); }\ncatch(e) { node.status({fill:'red', shape:'ring', text: name + ': TLE parse fail'}); return null; }\n\nconst now    = new Date();\nconst posVel = satellite.propagate(satrec, now);\n\nif (!posVel.position || posVel.position === false) {\n    node.status({fill:'red', shape:'ring', text: name + ': propagation fail'});\n    return null;\n}\n\nconst gmst = satellite.gstime(now);\nconst geo  = satellite.eciToGeodetic(posVel.position, gmst);\n\nmsg.payload = {\n    name,\n    lat: satellite.degreesLat(geo.latitude),\n    lon: satellite.degreesLong(geo.longitude),\n    alt: geo.height\n};\n\nnode.status({fill:'green', shape:'dot', text: name + ' ' + msg.payload.lat.toFixed(1) + ',' + msg.payload.lon.toFixed(1)});\nreturn msg;",
+        "outputs": 1,
+        "noerr": 0,
+        "libs": [
+            {
+                "var": "satellite",
+                "module": "satellite.js"
+            }
+        ],
+        "x": 570,
+        "y": 300,
+        "wires": [
+            [
+                "db35aaf61ede4794"
+            ]
+        ]
+    },
+    {
+        "id": "db35aaf61ede4794",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "Build SAT + Track + Footprint CoT",
+        "func": "const sat = msg.payload;\nconst name = String(sat.name).trim();\nconst lat  = sat.lat;\nconst lon  = sat.lon;\nconst altKm = sat.alt;\n\nif (typeof lat !== 'number' || typeof lon !== 'number') {\n    node.status({fill:'red', shape:'ring', text: name + ': invalid pos'});\n    return null;\n}\n\nconst safeName = name.replace(/[^a-zA-Z0-9_\\-]/g, '_');\nconst satUid   = 'SAT-' + safeName;\nconst footUid  = 'SAT-' + safeName + '-footprint';\nconst trackUid = 'SAT-' + safeName + '-track';\n\nconst now   = new Date();\nconst stale = new Date(now.getTime() + 90000);\nconst isoZ  = d => d.toISOString();\n\nconst aprsRemark = 'APRS: 145.825MHz Path: ARISS | alt ' + altKm.toFixed(0) + ' km';\n\nconst R_EARTH_KM = 6371;\nconst footRadiusKm = Math.sqrt(Math.pow(R_EARTH_KM + altKm, 2) - Math.pow(R_EARTH_KM, 2));\n\nfunction normLon(l) {\n    while (l >  180) l -= 360;\n    while (l < -180) l += 360;\n    return l;\n}\n\nfunction splitAtAntimeridian(points) {\n    if (points.length === 0) return [];\n    const segments = [];\n    let current = [points[0]];\n    for (let i = 1; i < points.length; i++) {\n        const prev = current[current.length - 1].lon;\n        const curr = normLon(points[i].lon);\n        const diff = curr - prev;\n        if (Math.abs(diff) > 180) {\n            segments.push(current);\n            current = [{ lat: points[i].lat, lon: curr }];\n        } else {\n            current.push({ lat: points[i].lat, lon: curr });\n        }\n    }\n    segments.push(current);\n    return segments;\n}\n\nconst NUM_VERTICES = 64;\nconst latRad = lat * Math.PI / 180;\nconst lonRad = lon * Math.PI / 180;\n\nconst rawAngDist = footRadiusKm / R_EARTH_KM;\nconst maxAngDist = (Math.PI / 2) - Math.abs(latRad) - 0.01;\nconst angDist = Math.min(rawAngDist, maxAngDist);\n\nconst rawFootVertices = [];\nfor (let i = 0; i <= NUM_VERTICES; i++) {\n    const bearing = (i % NUM_VERTICES / NUM_VERTICES) * 2 * Math.PI;\n    const vLatRad = Math.asin(\n        Math.sin(latRad) * Math.cos(angDist) +\n        Math.cos(latRad) * Math.sin(angDist) * Math.cos(bearing)\n    );\n    let vLonRad = lonRad + Math.atan2(\n        Math.sin(bearing) * Math.sin(angDist) * Math.cos(latRad),\n        Math.cos(angDist) - Math.sin(latRad) * Math.sin(vLatRad)\n    );\n    rawFootVertices.push({\n        lat: vLatRad * 180 / Math.PI,\n        lon: normLon(vLonRad * 180 / Math.PI)\n    });\n}\n\nconst footSegments = splitAtAntimeridian(rawFootVertices);\n\nconst rawTrackPoints = [];\nconst cache    = global.get('tleCache') || {};\nconst tleEntry = cache[name];\n\nif (tleEntry) {\n    let satrec;\n    try { satrec = satellite.twoline2satrec(tleEntry.tle1, tleEntry.tle2); } catch(e) { satrec = null; }\n    if (satrec) {\n        for (let m = 1; m <= 60; m++) {\n            const futureTime = new Date(now.getTime() + m * 60000);\n            const pv = satellite.propagate(satrec, futureTime);\n            if (!pv.position || pv.position === false) continue;\n            const gmst = satellite.gstime(futureTime);\n            const geo  = satellite.eciToGeodetic(pv.position, gmst);\n            rawTrackPoints.push({\n                lat: satellite.degreesLat(geo.latitude),\n                lon: normLon(satellite.degreesLong(geo.longitude))\n            });\n        }\n    }\n}\n\nconst trackSegments = splitAtAntimeridian(rawTrackPoints);\n\nconst strokeCyan = -16711681;\nconst fillCyan   =  872349951;\nconst strokeRed  = -65536;\n\nconst cotType = 'a-f-P-S';\n\nnode.send({ payload: {\n    event: {\n        $: { version:'2.0', uid:satUid, type:cotType, time:isoZ(now), start:isoZ(now), stale:isoZ(stale), how:'m-g' },\n        point: { $: { lat:lat.toFixed(6), lon:lon.toFixed(6), hae:(altKm*1000).toFixed(0), ce:'9999999', le:'9999999' } },\n        detail: {\n            contact: { $: { callsign: name } },\n            remarks: { _: aprsRemark }\n        }\n    }\n}});\n\nfootSegments.forEach((seg, idx) => {\n    if (seg.length < 2) return;\n    node.send({ payload: {\n        event: {\n            $: { version:'2.0', uid:footUid + (footSegments.length > 1 ? '-' + idx : ''), type:'u-d-f', time:isoZ(now), start:isoZ(now), stale:isoZ(stale), how:'h-e' },\n            point: { $: { lat:lat.toFixed(6), lon:lon.toFixed(6), hae:'0', ce:'9999999', le:'9999999' } },\n            detail: {\n                contact:      { $: { callsign: name + ' footprint' } },\n                strokeColor:  { $: { value: strokeCyan.toString() } },\n                strokeWeight: { $: { value: '2' } },\n                fillColor:    { $: { value: idx === 0 ? fillCyan.toString() : '0' } },\n                labels_on:    { $: { value: 'false' } },\n                link: seg.map(v => ({ $: { point: v.lat.toFixed(6)+','+v.lon.toFixed(6), type:'b-x-KmlGeofence' } })),\n                remarks: { _: name + ' coverage footprint ' + footRadiusKm.toFixed(0) + ' km radius' }\n            }\n        }\n    }});\n});\n\ntrackSegments.forEach((seg, idx) => {\n    if (seg.length < 2) return;\n    node.send({ payload: {\n        event: {\n            $: { version:'2.0', uid:trackUid + '-' + idx, type:'u-d-f', time:isoZ(now), start:isoZ(now), stale:isoZ(stale), how:'h-e' },\n            point: { $: { lat:seg[0].lat.toFixed(6), lon:seg[0].lon.toFixed(6), hae:'0', ce:'9999999', le:'9999999' } },\n            detail: {\n                contact:      { $: { callsign: name + ' track' } },\n                strokeColor:  { $: { value: strokeRed.toString() } },\n                strokeWeight: { $: { value: '2' } },\n                fillColor:    { $: { value: '0' } },\n                labels_on:    { $: { value: 'false' } },\n                closed:       { $: { value: 'false' } },\n                link: seg.map(v => ({ $: { point: v.lat.toFixed(6)+','+v.lon.toFixed(6), type:'b-x-KmlGeofence' } })),\n                remarks: { _: name + ' 60 min ground track' }\n            }\n        }\n    }});\n});\n\nnode.status({fill:'green', shape:'dot', text: name + ' foot:' + footSegments.length + ' track:' + trackSegments.length + ' segs'});\nreturn null;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [
+            {
+                "var": "satellite",
+                "module": "satellite.js"
+            }
+        ],
+        "x": 980,
+        "y": 180,
+        "wires": [
+            [
+                "6ac2d388ddbfbf42"
+            ]
+        ]
+    },
+    {
+        "id": "6ac2d388ddbfbf42",
+        "type": "xml",
+        "z": "cb1463db591ce3d6",
+        "name": "Build XML",
+        "property": "payload",
+        "attr": "$",
+        "chr": "_",
+        "x": 1190,
+        "y": 180,
+        "wires": [
+            [
+                "566e44abe4eb20c9"
+            ]
+        ]
+    },
+    {
+        "id": "566e44abe4eb20c9",
+        "type": "function",
+        "z": "cb1463db591ce3d6",
+        "name": "Frame CoT for TAK",
+        "func": "let xml = msg.payload;\nif (typeof xml !== 'string') xml = String(xml);\nmsg.payload = xml + '\\n';\nnode.status({fill:'green', shape:'dot', text: 'Sent ' + xml.length + ' bytes'});\nreturn msg;",
+        "outputs": 1,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 1370,
+        "y": 180,
+        "wires": [
+            [
+                "77ba33d0170e0f0d"
+            ]
+        ]
+    },
+    {
+        "id": "77ba33d0170e0f0d",
+        "type": "tcp out",
+        "z": "cb1463db591ce3d6",
+        "name": "TAK Server",
+        "host": "YOUR_TAK_SERVER_HOSTNAME_OR_IP",
+        "port": "8089",
+        "beserver": "client",
+        "base64": false,
+        "end": false,
+        "tls": "764beab14da5e494",
+        "x": 1550,
+        "y": 180,
+        "wires": []
+    },
+    {
+        "id": "764beab14da5e494",
+        "type": "tls-config",
+        "name": "tak-tls",
+        "cert": "",
+        "key": "",
+        "ca": "",
+        "certname": "YOUR_CERT.pem",
+        "keyname": "YOUR_KEY.key",
+        "caname": "",
+        "servername": "",
+        "verifyservercert": false,
+        "alpnprotocol": ""
+    }
+]
